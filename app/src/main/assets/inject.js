@@ -14,7 +14,7 @@
     window.addEventListener(ev, stop, true);
     document.addEventListener(ev, stop, true);
   });
-
+  window.addEventListener('blur', function (e) { if (e.target === window) e.stopImmediatePropagation(); }, true);
   /* ---------- 2. Xóa dữ liệu quảng cáo trong JSON của YouTube ---------- */
   var AD_KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams'];
   function strip(o) {
