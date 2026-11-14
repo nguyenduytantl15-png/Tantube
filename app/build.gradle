@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.tan.tantube'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.tan.tantube"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    // Khóa ký cố định: mỗi lần build lại vẫn cài đè lên bản cũ được
+    signingConfigs {
+        personal {
+            storeFile file('tantube.jks')
+            storePassword 'tantube123'
+            keyAlias 'tantube'
+            keyPassword 'tantube123'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.personal
+        }
+        debug {
+            signingConfig signingConfigs.personal
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.webkit:webkit:1.11.0'
+}
