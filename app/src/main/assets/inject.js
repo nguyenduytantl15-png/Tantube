@@ -15,6 +15,7 @@
     document.addEventListener(ev, stop, true);
   });
   window.addEventListener('blur', function (e) { if (e.target === window) e.stopImmediatePropagation(); }, true);
+
   /* ---------- 2. Xóa dữ liệu quảng cáo trong JSON của YouTube ---------- */
   var AD_KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams'];
   function strip(o) {
@@ -95,6 +96,51 @@
       }
     }
   }, 300);
+
+  /* ---------- Báo khi hết video (cho hẹn giờ "hết video") ---------- */
+  function currentId() {
+    try { return new URL(location.href).searchParams.get('v'); } catch (e) { return null; }
+  }
+  function playNext() {
+    var cur = currentId();
+    var links = document.querySelectorAll('a[href*="/watch?v="]');
+    for (var i = 0; i < links.length; i++) {
+      var a = links[i];
+      if (a.offsetParent === null) continue; // bỏ qua link bị ẩn (quảng cáo)
+      var id = null;
+      try { id = new URL(a.href, location.href).searchParams.get('v'); } catch (e) {}
+      if (id && id !== cur) { a.click(); return; }
+    }
+  }
+  document.addEventListener('ended', function (e) {
+    if (!e.target || e.target.tagName !== 'VIDEO') return;
+    if (document.querySelector('.html5-video-player.ad-showing')) return;
+    var closing = false, auto = true;
+    if (window.TanTube) {
+      try { closing = TanTube.onEnded(); } catch (x) {}
+      try { auto = TanTube.autoNext(); } catch (x) {}
+    }
+    if (closing || !auto) return;
+    var id = currentId();
+    // Chờ YouTube tự chuyển (danh sách phát / tự động phát); nếu không thì tự mở video kế
+    setTimeout(function () { if (currentId() === id) playNext(); }, 2500);
+  }, true);
+
+  /* ---------- Tự trả lời "Bạn vẫn đang xem chứ?" ---------- */
+  setInterval(function () {
+    var btns = document.querySelectorAll('button, [role="button"]');
+    for (var i = 0; i < btns.length; i++) {
+      var t = (btns[i].innerText || '').trim().toLowerCase();
+      if (t !== 'có' && t !== 'yes' && t !== 'tiếp tục xem') continue;
+      var box = btns[i].closest('[role="dialog"], tp-yt-paper-dialog, ytm-dialog, .dialog, bottom-sheet-container');
+      var txt = box ? (box.innerText || '').toLowerCase() : '';
+      if (txt.indexOf('vẫn đang xem') >= 0 || txt.indexOf('still watching') >= 0 || txt.indexOf('tiếp tục xem') >= 0) {
+        btns[i].click();
+        var v = document.querySelector('video');
+        if (v && v.paused) v.play();
+      }
+    }
+  }, 2000);
 
   /* ---------- 5. Lệnh từ thông báo ---------- */
   window.__ttToggle = function () {
