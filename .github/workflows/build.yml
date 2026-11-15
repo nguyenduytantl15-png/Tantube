@@ -22,7 +22,7 @@ jobs:
       - name: Build APK
         run: |
           if [ -d TanTube ]; then cd TanTube; fi
-          gradle assembleRelease --no-daemon
+          gradle assembleRelease --no-daemon -Pvc=${{ github.run_number }}
 
       - uses: actions/upload-artifact@v4
         with:
