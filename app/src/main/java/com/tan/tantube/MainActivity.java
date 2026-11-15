@@ -3,11 +3,19 @@ package com.tan.tantube;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.text.InputType;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.widget.EditText;
+import android.widget.TextView;
+import android.widget.Toast;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -47,6 +55,7 @@ public class MainActivity extends Activity {
     private WebChromeClient.CustomViewCallback customCallback;
     private String injectJs = "";
     private boolean docStartScript = false;
+    private TextView timerBtn;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -61,6 +70,7 @@ public class MainActivity extends Activity {
         root.addView(web, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
+        addTimerButton();
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -118,7 +128,15 @@ public class MainActivity extends Activity {
     // Cố ý KHÔNG gọi web.onPause()/pauseTimers() để video tiếp tục phát nền.
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        SleepTimer.checkOverdue();
+        refreshTimerButton();
+    }
+
+    @Override
     protected void onDestroy() {
+        if (current.get() == this) SleepTimer.clear();
         PlaybackService.stop(this);
         if (web != null) {
             web.destroy();
@@ -146,11 +164,163 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> web.evaluateJavascript("window.__ttPause&&__ttPause()", null));
     }
 
+    /* ----- Hẹn giờ tắt app ----- */
+    void closeApp() {
+        runOnUiThread(() -> {
+            web.evaluateJavascript("window.__ttPause&&__ttPause()", null);
+            PlaybackService.stop(this);
+            Toast.makeText(this, "Hết giờ hẹn – đã tắt TanTube", Toast.LENGTH_LONG).show();
+            finishAndRemoveTask();
+        });
+    }
+
+    private int dp(int v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void addTimerButton() {
+        timerBtn = new TextView(this);
+        timerBtn.setTextColor(Color.WHITE);
+        timerBtn.setTextSize(15);
+        timerBtn.setGravity(Gravity.CENTER);
+        timerBtn.setMinWidth(dp(44));
+        timerBtn.setMinHeight(dp(44));
+        timerBtn.setPadding(dp(10), 0, dp(10), 0);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(22));
+        bg.setColor(Color.parseColor("#99000000"));
+        bg.setStroke(dp(1), Color.parseColor("#55FFFFFF"));
+        timerBtn.setBackground(bg);
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(44), Gravity.END | Gravity.BOTTOM);
+        lp.setMargins(0, 0, dp(10), dp(150));
+        root.addView(timerBtn, lp);
+
+        // Kéo lên/xuống để đổi vị trí, chạm nhẹ để mở menu
+        timerBtn.setOnTouchListener(new View.OnTouchListener() {
+            float downY, startTy;
+            boolean dragging;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent e) {
+                switch (e.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        downY = e.getRawY();
+                        startTy = v.getTranslationY();
+                        dragging = false;
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        float dy = e.getRawY() - downY;
+                        if (Math.abs(dy) > dp(8)) dragging = true;
+                        if (dragging) {
+                            float max = root.getHeight() - dp(150) - v.getHeight();
+                            v.setTranslationY(Math.max(-max, Math.min(dp(140), startTy + dy)));
+                        }
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        if (!dragging) showTimerMenu();
+                        return true;
+                }
+                return false;
+            }
+        });
+        refreshTimerButton();
+    }
+
+    void refreshTimerButton() {
+        if (timerBtn == null) return;
+        String l = SleepTimer.label();
+        timerBtn.setText(l == null ? "⏱" : "⏱ " + l);
+        timerBtn.setAlpha(l == null ? 0.6f : 1f);
+    }
+
+    boolean isAutoNext() {
+        return getSharedPreferences("tantube", MODE_PRIVATE).getBoolean("autoNext", true);
+    }
+
+    private void setAutoNext(boolean on) {
+        getSharedPreferences("tantube", MODE_PRIVATE).edit().putBoolean("autoNext", on).apply();
+        Toast.makeText(this, on ? "Đã BẬT tự phát video tiếp" : "Đã TẮT tự phát video tiếp",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private void showTimerMenu() {
+        final int[] mins = {15, 30, 45, 60, 90};
+        java.util.List<String> items = new java.util.ArrayList<>();
+        for (int m : mins) items.add(m + " phút");
+        items.add("Khi hết video đang xem");
+        items.add("Tự nhập số phút…");
+        final boolean auto = isAutoNext();
+        items.add("▶ Tự phát video tiếp theo: " + (auto ? "ĐANG BẬT" : "ĐANG TẮT"));
+        final int autoIdx = items.size() - 1;
+        if (SleepTimer.active()) items.add("Hủy hẹn giờ (đang hẹn: " + SleepTimer.label() + ")");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Hẹn giờ tắt app")
+                .setItems(items.toArray(new String[0]), (d, which) -> {
+                    if (which < mins.length) {
+                        SleepTimer.start(this, mins[which]);
+                        Toast.makeText(this, "Sẽ tắt lúc " + SleepTimer.label(), Toast.LENGTH_SHORT).show();
+                    } else if (which == mins.length) {
+                        SleepTimer.startEndOfVideo(this);
+                        Toast.makeText(this, "Sẽ tắt khi hết video này", Toast.LENGTH_SHORT).show();
+                    } else if (which == mins.length + 1) {
+                        askCustomMinutes();
+                    } else if (which == autoIdx) {
+                        setAutoNext(!auto);
+                    } else {
+                        SleepTimer.cancel(this);
+                        Toast.makeText(this, "Đã hủy hẹn giờ", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Đóng", null)
+                .show();
+    }
+
+    private void askCustomMinutes() {
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setHint("Ví dụ: 20");
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        box.addView(input);
+        new AlertDialog.Builder(this)
+                .setTitle("Tắt app sau bao nhiêu phút?")
+                .setView(box)
+                .setPositiveButton("Hẹn giờ", (d, w) -> {
+                    try {
+                        int m = Integer.parseInt(input.getText().toString().trim());
+                        if (m > 0 && m <= 1440) {
+                            SleepTimer.start(this, m);
+                            Toast.makeText(this, "Sẽ tắt lúc " + SleepTimer.label(), Toast.LENGTH_SHORT).show();
+                        }
+                    } catch (NumberFormatException ignored) {
+                    }
+                })
+                .setNegativeButton("Hủy", null)
+                .show();
+    }
+
     /* ----- Cầu nối JS -> Java ----- */
     private class Bridge {
         @JavascriptInterface
         public void onState(int playing, String title) {
             runOnUiThread(() -> PlaybackService.update(MainActivity.this, playing == 1, title));
+        }
+
+        /** Trả về true nếu app sắp tắt (hẹn giờ "hết video"). */
+        @JavascriptInterface
+        public boolean onEnded() {
+            boolean closing = SleepTimer.endOfVideo;
+            if (closing) runOnUiThread(SleepTimer::fire);
+            return closing;
+        }
+
+        @JavascriptInterface
+        public boolean autoNext() {
+            return isAutoNext();
         }
     }
 
