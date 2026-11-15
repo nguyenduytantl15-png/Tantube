@@ -10,8 +10,8 @@ android {
         applicationId "com.tan.tantube"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode((project.findProperty('vc') ?: '1') as int)
+        versionName "1." + (project.findProperty('vc') ?: '0')
     }
 
     // Khóa ký cố định: mỗi lần build lại vẫn cài đè lên bản cũ được
