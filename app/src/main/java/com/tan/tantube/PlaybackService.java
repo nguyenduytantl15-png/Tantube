@@ -25,6 +25,7 @@ public class PlaybackService extends Service {
     private static final String ACTION_UPDATE = "update";
     private static final String ACTION_TOGGLE = "toggle";
     private static final String ACTION_STOP = "stop";
+    private static final String ACTION_REFRESH = "refresh";
 
     static boolean running = false;
 
@@ -45,6 +46,15 @@ public class PlaybackService extends Service {
             else ContextCompat.startForegroundService(c, i);
         } catch (Exception ignored) {
             // Android có thể chặn khởi động dịch vụ khi app đang ở nền; bỏ qua
+        }
+    }
+
+    /** Cập nhật lại thông báo (ví dụ khi đổi hẹn giờ). */
+    static void refresh(Context c) {
+        if (!running) return;
+        try {
+            c.startService(new Intent(c, PlaybackService.class).setAction(ACTION_REFRESH));
+        } catch (Exception ignored) {
         }
     }
 
@@ -103,7 +113,9 @@ public class PlaybackService extends Service {
         return new NotificationCompat.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notify)
                 .setContentTitle(title)
-                .setContentText(playing ? "Đang phát" : "Tạm dừng")
+                .setContentText((playing ? "Đang phát" : "Tạm dừng")
+                        + (SleepTimer.endOfVideo ? " · Tắt khi hết video"
+                        : SleepTimer.label() != null ? " · Tắt lúc " + SleepTimer.label() : ""))
                 .setContentIntent(open)
                 .setOngoing(playing)
                 .setOnlyAlertOnce(true)
